@@ -1,0 +1,162 @@
+zabbix_export:
+  version: '6.4'
+  template_groups:
+    - uuid: 7df96b18c230490a9a0a9e2307226338
+      name: Templates
+  templates:
+    - uuid: 5cb9f9ad58cd445ab8f44b5bae42debc
+      template: Transmission
+      name: Transmission
+      groups:
+        - name: Templates
+      items:
+        - uuid: a4ce784ecdec4891acea4e01800dbc45
+          name: 'Download Speed'
+          type: DEPENDENT
+          key: DownSpeed
+          delay: '0'
+          value_type: FLOAT
+          units: b
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arguments.torrents..rateDownload.sum()
+          master_item:
+            key: getvalues
+          tags:
+            - tag: App
+              value: Transmission
+        - uuid: 48fcdfc92ab241849ce1b81733a39fac
+          name: Get-Values
+          type: SCRIPT
+          key: getvalues
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          params: |
+            // Parsear JSON de entrada
+            var resultado;
+            try {
+                resultado = JSON.parse(value);
+            } catch (e) {
+                return JSON.stringify({ error: 'JSON parsing error', details: e.message });
+            }
+            
+            // Crear objeto HttpRequest
+            var req = new HttpRequest();
+            
+            // Realizar la primera solicitud para obtener el Session ID
+            var resp;
+            try {
+                resp = req.post('http://' + resultado.host + ':9091/transmission/rpc');
+            } catch (e) {
+                return JSON.stringify({ error: 'First request failed', details: e.message });
+            }
+            
+            // Buscar el Session ID en la respuesta
+            var sessionIdPattern = /X-Transmission-Session-Id:\s*([a-zA-Z0-9]+)/;
+            var match = resp.match(sessionIdPattern);
+            
+            if (!match) {
+                return JSON.stringify({ error: 'Session ID not found in response' });
+            }
+            
+            var sessionId = match[1];
+            
+            // Configurar y realizar la segunda solicitud con el Session ID
+            req.addHeader('X-Transmission-Session-Id: ' +sessionId);
+            
+            var datos = JSON.stringify({
+                arguments: {
+                    fields: ["id", "name", "rateDownload", "rateUpload"]
+                },
+                method: "torrent-get",
+                tag: 4
+            });
+            
+            var resp2;
+            try {
+                resp2 = req.post('http://' + resultado.host + ':9091/transmission/rpc', datos);
+            } catch (e) {
+                return JSON.stringify({ error: 'Second request failed', details: e.message });
+            }
+            
+            // Devolver la respuesta de la segunda solicitud
+            return resp2;
+          parameters:
+            - name: host
+              value: '{HOST.CONN}'
+          tags:
+            - tag: App
+              value: Transmission
+        - uuid: 3718a35135cc4dc8b5e7463768ce6b66
+          name: 'Number of Torrents'
+          type: DEPENDENT
+          key: NbrTorrents
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arguments.torrents..id.length()
+          master_item:
+            key: getvalues
+          tags:
+            - tag: App
+              value: Transmission
+        - uuid: 103b9de2238347aba1528c724560463f
+          name: 'Upload Speed'
+          type: DEPENDENT
+          key: UplSpeed
+          delay: '0'
+          value_type: FLOAT
+          units: b
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arguments.torrents..rateUpload.sum()
+          master_item:
+            key: getvalues
+          tags:
+            - tag: App
+              value: Transmission
+      macros:
+        - macro: '{$TORRENTSERVER}'
+          value: '{HOST.CONN}'
+      dashboards:
+        - uuid: 6dbf106448f54ed894d79a21f2def7e2
+          name: Transmission
+          display_period: '60'
+          pages:
+            - widgets:
+                - type: item
+                  name: 'Number of Torrents'
+                  width: '5'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        host: Transmission
+                        key: NbrTorrents
+                - type: item
+                  name: 'Download Speed'
+                  x: '5'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        host: Transmission
+                        key: DownSpeed
+                - type: item
+                  name: 'Download Speed'
+                  x: '11'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        host: Transmission
+                        key: UplSpeed
